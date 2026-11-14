@@ -1,0 +1,22 @@
+# Runs the whole test suite, including the tests that need Postgres and Redis.
+# Started by hand from the Actions tab: pick main, or a pull request's branch.
+name: Tests
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Run the tests
+        run: docker compose -f docker-compose.test.yml run --rm tests
+
+      - name: Remove the test services
+        if: always()
+        run: docker compose -f docker-compose.test.yml down --volumes

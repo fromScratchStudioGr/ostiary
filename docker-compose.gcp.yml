@@ -1,0 +1,25 @@
+services:
+  gateway:
+    environment:
+      KMS_PROVIDER: gcp
+      GCP_KMS_KEY_NAME: ${GCP_KMS_KEY_NAME}
+      # The container needs its own credential — it can't use the
+      # "impersonate your own login" ADC set up for local dev. Points at the
+      # service account key mounted below.
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/gcp-kms-key.json
+    # The container runs as uid/gid 10001. On Linux the host file's owner and
+    # mode apply inside it, so it must be readable by group 10001 - see the
+    # permissions note in docs/kms.md.
+    volumes:
+      - ${GCP_KMS_CREDENTIALS_FILE}:/secrets/gcp-kms-key.json:ro
+
+  # admin also seals provider keys (registerKeyHandler), so it needs the
+  # same KMS provider/credentials as gateway — otherwise keys it seals with
+  # local KMS would fail to decrypt on gateway's GCP KMS client, or vice versa.
+  admin:
+    environment:
+      KMS_PROVIDER: gcp
+      GCP_KMS_KEY_NAME: ${GCP_KMS_KEY_NAME}
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/gcp-kms-key.json
+    volumes:
+      - ${GCP_KMS_CREDENTIALS_FILE}:/secrets/gcp-kms-key.json:ro

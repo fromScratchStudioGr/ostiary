@@ -1,0 +1,5 @@
+.git
+.env
+docs
+gcp-kms-key.json
+policy.yaml

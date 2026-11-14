@@ -1,0 +1,56 @@
+services:
+  # Dev-mode only: in-memory, auto-unsealed, root token pinned via
+  # BAO_DEV_ROOT_TOKEN_ID instead of generated - nothing here survives a
+  # restart. This is an alternative KMS backend alongside "local" and "gcp",
+  # so it's only started when this override file is used.
+  openbao:
+    image: openbao/openbao:latest
+    container_name: ostiary-openbao
+    cap_add:
+      - IPC_LOCK
+    environment:
+      BAO_DEV_ROOT_TOKEN_ID: ${OPENBAO_VAULT_TOKEN:-dev-root-token}
+      BAO_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    healthcheck:
+      test: ["CMD", "bao", "status", "-address=http://127.0.0.1:8200"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  openbao-init:
+    image: openbao/openbao:latest
+    container_name: ostiary-openbao-init
+    entrypoint: ["sh", "-c"]
+    command:
+      - >
+        bao secrets enable transit || true;
+        bao write -f transit/keys/${OPENBAO_VAULT_KEYNAME:-ostiary-dek-wrap}
+    environment:
+      BAO_ADDR: http://openbao:8200
+      BAO_TOKEN: ${OPENBAO_VAULT_TOKEN:-dev-root-token}
+    depends_on:
+      openbao:
+        condition: service_healthy
+
+  gateway:
+    environment:
+      KMS_PROVIDER: openbao
+      OPENBAO_VAULT_ADDR: http://openbao:8200
+      OPENBAO_VAULT_TOKEN: ${OPENBAO_VAULT_TOKEN:-dev-root-token}
+      OPENBAO_VAULT_KEYNAME: ${OPENBAO_VAULT_KEYNAME:-ostiary-dek-wrap}
+    depends_on:
+      openbao-init:
+        condition: service_completed_successfully
+
+  # admin also seals provider keys (registerKeyHandler), so it needs the
+  # same KMS provider as gateway - otherwise keys it seals with openbao
+  # would fail to decrypt on gateway's local/gcp KMS client, or vice versa.
+  admin:
+    environment:
+      KMS_PROVIDER: openbao
+      OPENBAO_VAULT_ADDR: http://openbao:8200
+      OPENBAO_VAULT_TOKEN: ${OPENBAO_VAULT_TOKEN:-dev-root-token}
+      OPENBAO_VAULT_KEYNAME: ${OPENBAO_VAULT_KEYNAME:-ostiary-dek-wrap}
+    depends_on:
+      openbao-init:
+        condition: service_completed_successfully

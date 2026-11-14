@@ -1,0 +1,6 @@
+.env
+gcp-kms-key.json
+policy.yaml
+coverage.out
+.scannerwork/
+.vscode/

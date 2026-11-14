@@ -1,0 +1,70 @@
+# Runs the tests that need real services (see "Tests that need Postgres and
+# Redis" in CONTRIBUTING.md):
+#
+#   docker compose -f docker-compose.test.yml run --rm tests
+#
+# That starts Postgres and Redis, waits until they're healthy, then runs
+# `go test` against them in a container; `down` removes everything again.
+# The tests find the services through TEST_POSTGRES_ADDR and TEST_REDIS_ADDR,
+# set on the `tests` service below, so that's the one place their addresses
+# and credentials are defined.
+#
+# Independent of the dev stack: its own project name, no persistence (every
+# run starts from empty), and the host ports published for running `go test`
+# directly on the host are non-default, so both stacks can run side by side.
+# They're bound to loopback because Docker-published ports bypass host
+# firewalls like ufw, and the passwords here are throwaway.
+name: ostiary-test
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: test
+    ports:
+      - "127.0.0.1:55432:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:56379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  tests:
+    image: golang:1.27.0
+    working_dir: /src
+    volumes:
+      - .:/src
+      # Keep downloaded modules and compiled packages between runs, or every
+      # run would start by downloading and compiling everything again.
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    environment:
+      TEST_POSTGRES_ADDR: postgres://postgres:test@postgres:5432/ostiary_test?sslmode=disable
+      TEST_REDIS_ADDR: redis:6379
+      # Fail, don't skip, if a service is missing (see internal/testutil).
+      CI: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Override to run something else, e.g. a single package:
+    #   docker compose -f docker-compose.test.yml run --rm tests go test ./internal/usage/ -v
+    command: go test ./... -count=1 -coverprofile=coverage.out
+
+volumes:
+  go-mod-cache:
+  go-build-cache:
